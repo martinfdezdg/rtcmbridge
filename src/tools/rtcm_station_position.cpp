@@ -25,13 +25,13 @@
 namespace fs = std::filesystem;
 using namespace rtcmbridge;
 
-static std::atomic<bool> g_running{true};
+static std::atomic<bool> g_stop_requested{false};
 static std::mutex g_log_mtx;
 
 /* Handler POSIX para parada ordenada del proceso (Ctrl+C / SIGTERM). */
 static void on_signal(int)
 {
-    g_running = false;
+    g_stop_requested = true;
 }
 
 struct AppConfig {
@@ -293,7 +293,7 @@ static WorkerResult run_worker(const NtripConfig& ntrip,
             auto last_try = std::chrono::steady_clock::now();
             auto last_progress = std::chrono::steady_clock::now();
 
-            while (g_running.load()) {
+            while (!g_stop_requested.load()) {
                 std::this_thread::sleep_for(std::chrono::seconds(1));
                 const auto now = std::chrono::steady_clock::now();
                 const auto age_s = std::chrono::duration_cast<std::chrono::seconds>(now - started).count();
@@ -359,9 +359,9 @@ static WorkerResult run_worker(const NtripConfig& ntrip,
                     }
                 }
             });
-            return g_running.load();
+            return !g_stop_requested.load();
         },
-        g_running,
+        g_stop_requested,
         [&](const std::string& m) { log_line("[station][" + ntrip.mountpoint + "] " + m); });
 
     if (ppp_thread.joinable()) ppp_thread.join();
@@ -432,7 +432,7 @@ int main(int argc, char* argv[])
     }
 
     for (auto& t : threads) t.join();
-    g_running = false;
+    g_stop_requested = true;
 
     int global_rc = 0;
     for (const auto& r : results) {

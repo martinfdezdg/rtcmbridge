@@ -11,8 +11,8 @@ SOL_OUT="$2"
 WORKDIR="${3:-${PPP_WORKDIR:-$(mktemp -d)}}"
 mkdir -p "$WORKDIR"
 
-CONVBIN_BIN="${CONVBIN_BIN:-convbin}"
-RNX2RTKP_BIN="${RNX2RTKP_BIN:-rnx2rtkp}"
+CONVBIN_BIN="${CONVBIN_BIN:-third_party/rtklib/bin/convbin}"
+RNX2RTKP_BIN="${RNX2RTKP_BIN:-third_party/rtklib/bin/rnx2rtkp}"
 PPP_CONF="${PPP_CONF:-scripts/ppp-static.conf}"
 
 # Optionally provide precise products.

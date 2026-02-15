@@ -7,25 +7,50 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BUILD_NATS_TOOLS "Build tools requiring libnats" ON)
 include(CTest)
+set(NATS_ROOT "${CMAKE_SOURCE_DIR}/third_party/nats/install" CACHE PATH "Local nats.c install prefix")
+
+function(set_tool_output target_name)
+  set_target_properties(${target_name} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+endfunction()
 
 find_package(Threads REQUIRED)
 
-find_package(PkgConfig QUIET)
-if(PkgConfig_FOUND)
-  pkg_check_modules(NATS QUIET libnats)
-endif()
+if(BUILD_NATS_TOOLS)
+  set(_nats_local_lib "")
+  if(EXISTS "${NATS_ROOT}/lib/libnats.a")
+    set(_nats_local_lib "${NATS_ROOT}/lib/libnats.a")
+  elseif(EXISTS "${NATS_ROOT}/lib/libnats.dylib")
+    set(_nats_local_lib "${NATS_ROOT}/lib/libnats.dylib")
+  elseif(EXISTS "${NATS_ROOT}/lib/libnats.so")
+    set(_nats_local_lib "${NATS_ROOT}/lib/libnats.so")
+  endif()
 
-if(NATS_FOUND)
-  add_library(NATS::nats INTERFACE IMPORTED)
-  target_include_directories(NATS::nats INTERFACE ${NATS_INCLUDE_DIRS})
-  target_link_libraries(NATS::nats INTERFACE ${NATS_LIBRARIES})
-elseif(BUILD_NATS_TOOLS)
-  find_library(NATS_LIBRARY nats)
-  if(NATS_LIBRARY)
+  if(EXISTS "${NATS_ROOT}/include/nats/nats.h" AND NOT "${_nats_local_lib}" STREQUAL "")
     add_library(NATS::nats UNKNOWN IMPORTED)
-    set_target_properties(NATS::nats PROPERTIES IMPORTED_LOCATION "${NATS_LIBRARY}")
+    set_target_properties(NATS::nats PROPERTIES IMPORTED_LOCATION "${_nats_local_lib}")
+    target_include_directories(NATS::nats INTERFACE "${NATS_ROOT}/include")
+    message(STATUS "Using local nats.c from ${NATS_ROOT}")
   else()
-    message(FATAL_ERROR "libnats not found. Install it or configure with -DBUILD_NATS_TOOLS=OFF")
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+      pkg_check_modules(NATS QUIET libnats)
+    endif()
+
+    if(NATS_FOUND)
+      add_library(NATS::nats INTERFACE IMPORTED)
+      target_include_directories(NATS::nats INTERFACE ${NATS_INCLUDE_DIRS})
+      target_link_libraries(NATS::nats INTERFACE ${NATS_LIBRARIES})
+      message(STATUS "Using system libnats via pkg-config")
+    else()
+      find_library(NATS_LIBRARY nats)
+      if(NATS_LIBRARY)
+        add_library(NATS::nats UNKNOWN IMPORTED)
+        set_target_properties(NATS::nats PROPERTIES IMPORTED_LOCATION "${NATS_LIBRARY}")
+        message(STATUS "Using system libnats from linker path")
+      else()
+        message(FATAL_ERROR "libnats not found. Run scripts/bootstrap_deps.sh or configure with -DBUILD_NATS_TOOLS=OFF")
+      endif()
+    endif()
   endif()
 endif()
 
@@ -41,34 +66,24 @@ target_link_libraries(rtcmbridge_core PUBLIC Threads::Threads)
 
 add_executable(rtcm_decoder_ntrip src/tools/rtcm_decoder_ntrip.cpp)
 target_link_libraries(rtcm_decoder_ntrip PRIVATE Threads::Threads)
+set_tool_output(rtcm_decoder_ntrip)
 
 add_executable(rtcm_rinex_recorder src/tools/rtcm_rinex_recorder.cpp)
 target_link_libraries(rtcm_rinex_recorder PRIVATE rtcmbridge_core)
+set_tool_output(rtcm_rinex_recorder)
 
 add_executable(rtcm_station_position src/tools/rtcm_station_position.cpp)
 target_link_libraries(rtcm_station_position PRIVATE rtcmbridge_core)
+set_tool_output(rtcm_station_position)
 
 if(BUILD_NATS_TOOLS)
   add_executable(rtcm_bridge src/tools/rtcm_bridge.cpp)
   target_link_libraries(rtcm_bridge PRIVATE Threads::Threads NATS::nats)
+  set_tool_output(rtcm_bridge)
 
   add_executable(rtcm_decoder_nats src/tools/rtcm_decoder_nats.cpp)
   target_link_libraries(rtcm_decoder_nats PRIVATE Threads::Threads NATS::nats)
-endif()
-
-set_target_properties(
-  rtcm_decoder_ntrip
-  rtcm_rinex_recorder
-  rtcm_station_position
-  PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
-)
-
-if(TARGET rtcm_bridge)
-  set_target_properties(rtcm_bridge PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-endif()
-
-if(TARGET rtcm_decoder_nats)
-  set_target_properties(rtcm_decoder_nats PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+  set_tool_output(rtcm_decoder_nats)
 endif()
 
 if(BUILD_TESTING)

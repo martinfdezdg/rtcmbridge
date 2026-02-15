@@ -1,13 +1,41 @@
 # rtcmbridge
 
-Proyecto C++ para ingesta, transporte, decodificación y postproceso RTCM.
+Proyecto C++17 con herramientas RTCM/NTRIP para:
+- `rtcm_bridge`: puente NTRIP -> NATS.
+- `rtcm_decoder_ntrip`: decoder RTCM desde caster NTRIP.
+- `rtcm_decoder_nats`: decoder RTCM desde NATS.
+- `rtcm_rinex_recorder`: recorder en tiempo real RTCM -> RINEX.
+- `rtcm_station_position`: estimador de posicion de estacion (`rtcm` o `ppp`).
+
+## Estructura
+- `src/core`: libreria comun (NTRIP, parser RTCM, mensajes 1005/1006, mountpoints).
+- `src/tools`: binarios.
+- `include/rtcmbridge/core`: headers publicos.
+- `scripts`: utilidades de bootstrap/PPP.
+- `tests`: tests unitarios de core.
 
 ## Requisitos
-- C++17
 - CMake >= 3.16
-- pthreads
-- `libnats` (para `rtcm_bridge` y `rtcm_decoder_nats`)
-- Opcional: RTKLIB (`convbin`, `rnx2rtkp`) para RINEX y PPP
+- Compilador C++17
+- `make`
+- `git`
+
+Dependencias opcionales:
+- `libnats` para `rtcm_bridge` y `rtcm_decoder_nats`
+- `convbin`/`rnx2rtkp` (RTKLIB) para RINEX/PPP
+
+## Bootstrap de dependencias locales (opcional)
+Instala dependencias en `third_party/` para reproducibilidad:
+
+```bash
+scripts/bootstrap_deps.sh
+```
+
+Solo RTKLIB:
+
+```bash
+scripts/bootstrap_deps.sh --rtklib-only
+```
 
 ## Compilar
 ```bash
@@ -15,112 +43,73 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-## Tests
+Sin herramientas NATS:
+
 ```bash
-ctest --test-dir build --output-on-failure
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_NATS_TOOLS=OFF
+cmake --build build -j
 ```
 
-## 1) Bridge independiente (`rtcm_bridge`)
-Lee `mountpoints.conf` y publica en NATS como `NTRIP.<mountpoint>`.
+## Configuracion de mountpoints
+Formato de `mountpoints.conf`:
+
+```text
+user:pass host:port/mountpoint
+```
+
+Si no pasas `--mountpoint`, los tools que lo soportan procesan todos los mountpoints del fichero.
+
+## Ejecucion
+
+### 1) Bridge NTRIP -> NATS
 ```bash
 build/bin/rtcm_bridge mountpoints.conf
 ```
 
-Monitoreo en vivo:
-```bash
-build/bin/rtcm_decoder_nats ABAN3M
-```
-
-## 2) Decoder directo NTRIP (`rtcm_decoder_ntrip`)
+### 2) Decoder directo NTRIP
 ```bash
 build/bin/rtcm_decoder_ntrip <host> <port> <mountpoint> <user> <pass>
 ```
 
-Ejemplo:
-```bash
-build/bin/rtcm_decoder_ntrip 192.168.1.10 2101 BASE01 user pass
-```
-
-## 3) Decoder desde NATS (`rtcm_decoder_nats`)
+### 3) Decoder desde NATS
 ```bash
 build/bin/rtcm_decoder_nats <mountpoint> [nats_servers_csv]
 ```
 
-Ejemplo:
-```bash
-build/bin/rtcm_decoder_nats BASE01 nats://127.0.0.1:4222
-```
-
-## 4) Recorder RTCM->RINEX (`rtcm_rinex_recorder`)
-Lee conexión desde `mountpoints.conf`, graba RTCM válido y opcionalmente genera RINEX al finalizar.
-Si no pasas `--mountpoint`, procesa todos los mountpoints del conf en paralelo.
+### 4) Recorder RTCM -> RINEX en tiempo real
 ```bash
 build/bin/rtcm_rinex_recorder \
   --mountpoints-file=mountpoints.conf \
-  --out-dir=./data --station=ABAN3M \
-  --convbin=/usr/local/bin/convbin
+  --out-dir=./data \
+  --rinex-version=3.04 \
+  --rinex-update-sec=10
 ```
 
-Para un único mountpoint:
-```bash
-build/bin/rtcm_rinex_recorder \
-  --mountpoint=ABAN3M --mountpoints-file=mountpoints.conf \
-  --out-dir=./data --station=ABAN3M \
-  --convbin=/usr/local/bin/convbin
-```
+Notas:
+- Si `convbin` esta disponible, genera `*.obs` y `*.nav`.
+- Si `convbin` no esta disponible, cae a `*.rtcm3`.
+- El proceso es continuo y termina con `Ctrl+C`.
 
-Monitoreo en vivo del fichero RTCM:
-```bash
-watch -n 2 'ls -lh data/*.rtcm3 | tail -n 3'
-```
+### 5) Posicion de estacion
 
-## 5) Posición de estación en tiempo real (`rtcm_station_position`)
-
-### Modo RTCM (1005/1006)
+Modo RTCM (1005/1006):
 ```bash
 build/bin/rtcm_station_position \
   --mountpoints-file=mountpoints.conf \
-  --mode=rtcm
+  --mode=rtcm \
+  --out-dir=./data
 ```
-Si no pasas `--mountpoint`, calcula para todos los mountpoints del conf en paralelo.
 
-Salida en vivo: media ECEF, sigma3d y mejor precisión acumulada.
-
-### Modo PPP (RTKLIB real)
+Modo PPP (solver externo):
 ```bash
-export CONVBIN_BIN=/usr/local/bin/convbin
-export RNX2RTKP_BIN=/usr/local/bin/rnx2rtkp
-export PPP_CONF=scripts/ppp-static.conf
-
-# Opcional: productos precisos
-export PPP_PRODUCTS_DIR=/data/igs_products
-# o explícitos:
-# export PPP_SP3_FILE=/data/igs/igs.sp3
-# export PPP_CLK_FILE=/data/igs/igs.clk
-# export PPP_BIA_FILE=/data/igs/igs.bia
-# export PPP_DCB_FILE=/data/igs/igs.dcb
-
 build/bin/rtcm_station_position \
   --mountpoints-file=mountpoints.conf \
   --mode=ppp \
-  --min-data-sec=1800 --solve-interval-sec=300 --progress-interval-sec=60 \
+  --out-dir=./data \
   --solver-cmd='scripts/rtklib_ppp_solver.sh {rtcm} {solution} {workdir}'
 ```
 
-Monitoreo PPP en vivo (otra terminal):
+## Tests
 ```bash
-tail -f data/*.ppp.sol
+ctest --test-dir build --output-on-failure
 ```
-
-## Precision objetivo < 5 cm (PPP)
-Regla práctica para PPP estático dual-frecuencia + productos precisos:
-- Horizontal < 5 cm: ~20-40 min.
-- Vertical < 5 cm: ~45-90 min.
-
-Depende de multipath, entorno RF, máscara de elevación, antena y calidad de productos.
-
-## Script PPP
-`scripts/rtklib_ppp_solver.sh`:
-- Convierte RTCM3 a RINEX (`convbin`).
-- Ejecuta PPP (`rnx2rtkp`) con config `scripts/ppp-static.conf`.
-- Entrega solución ECEF en formato `X Y Z SIGMA` para `rtcm_station_position`.

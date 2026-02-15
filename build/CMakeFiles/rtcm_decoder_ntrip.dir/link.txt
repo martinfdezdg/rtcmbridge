@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/rtcm_decoder_ntrip.dir/src/tools/rtcm_decoder_ntrip.cpp.o -o bin/rtcm_decoder_ntrip

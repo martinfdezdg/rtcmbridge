@@ -1,0 +1,8 @@
+/build/
+/data/
+/third_party/
+/default.profraw
+/rtcm_bridge
+/rtcm_decoder_nats
+/rtcm_decoder_ntrip
+.DS_Store
