@@ -76,6 +76,24 @@ build/bin/rtcm_decoder_ntrip <host> <port> <mountpoint> <user> <pass>
 build/bin/rtcm_decoder_nats <mountpoint> [nats_servers_csv]
 ```
 
+### 3.1) Latencia desde caster NTRIP (MSM GPS)
+```bash
+build/bin/rtcm_latency_ntrip \
+  --mountpoint=ABAN3M \
+  --mountpoints-file=mountpoints.conf \
+  --summary-sec=5 \
+  --gps-utc-leap-sec=18
+```
+
+### 3.2) Latencia desde NATS (MSM GPS)
+```bash
+build/bin/rtcm_latency_nats \
+  --mountpoint=ABAN3M \
+  --nats=nats://127.0.0.1:4222 \
+  --summary-sec=5 \
+  --gps-utc-leap-sec=18
+```
+
 ### 4) Recorder RTCM -> RINEX en tiempo real
 ```bash
 build/bin/rtcm_rinex_recorder \

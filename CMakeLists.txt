@@ -68,6 +68,10 @@ add_executable(rtcm_decoder_ntrip src/tools/rtcm_decoder_ntrip.cpp)
 target_link_libraries(rtcm_decoder_ntrip PRIVATE Threads::Threads)
 set_tool_output(rtcm_decoder_ntrip)
 
+add_executable(rtcm_latency_ntrip src/tools/rtcm_latency_ntrip.cpp)
+target_link_libraries(rtcm_latency_ntrip PRIVATE rtcmbridge_core)
+set_tool_output(rtcm_latency_ntrip)
+
 add_executable(rtcm_rinex_recorder src/tools/rtcm_rinex_recorder.cpp)
 target_link_libraries(rtcm_rinex_recorder PRIVATE rtcmbridge_core)
 set_tool_output(rtcm_rinex_recorder)
@@ -84,6 +88,10 @@ if(BUILD_NATS_TOOLS)
   add_executable(rtcm_decoder_nats src/tools/rtcm_decoder_nats.cpp)
   target_link_libraries(rtcm_decoder_nats PRIVATE Threads::Threads NATS::nats)
   set_tool_output(rtcm_decoder_nats)
+
+  add_executable(rtcm_latency_nats src/tools/rtcm_latency_nats.cpp)
+  target_link_libraries(rtcm_latency_nats PRIVATE rtcmbridge_core Threads::Threads NATS::nats)
+  set_tool_output(rtcm_latency_nats)
 endif()
 
 if(BUILD_TESTING)
