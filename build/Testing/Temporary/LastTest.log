@@ -1,0 +1,19 @@
+Start testing: Feb 15 19:27 CET
+----------------------------------------------------------
+1/1 Testing: rtcm_core_tests
+1/1 Test: rtcm_core_tests
+Command: "/Users/martin/Documents/Personal/Proyectos/Coding/Other/caster/rtcmbridge/build/rtcm_core_tests"
+Directory: /Users/martin/Documents/Personal/Proyectos/Coding/Other/caster/rtcmbridge/build
+"rtcm_core_tests" start time: Feb 15 19:27 CET
+Output:
+----------------------------------------------------------
+PASS: rtcm core tests
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"rtcm_core_tests" end time: Feb 15 19:27 CET
+"rtcm_core_tests" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Feb 15 19:27 CET
