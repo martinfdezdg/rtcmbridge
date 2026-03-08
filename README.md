@@ -1,40 +1,27 @@
 # rtcmbridge
 
-Proyecto C++17 con herramientas RTCM/NTRIP para:
+Proyecto C++17 reducido con 3 utilidades RTCM/NTRIP:
 - `rtcm_bridge`: puente NTRIP -> NATS.
 - `rtcm_decoder_ntrip`: decoder RTCM desde caster NTRIP.
 - `rtcm_decoder_nats`: decoder RTCM desde NATS.
-- `rtcm_rinex_recorder`: recorder en tiempo real RTCM -> RINEX.
-- `rtcm_station_position`: estimador de posicion de estacion (`rtcm` o `ppp`).
 
 ## Estructura
-- `src/core`: libreria comun (NTRIP, parser RTCM, mensajes 1005/1006, mountpoints).
-- `src/tools`: binarios.
-- `include/rtcmbridge/core`: headers publicos.
-- `scripts`: utilidades de bootstrap/PPP.
-- `tests`: tests unitarios de core.
+- `src/tools/rtcm_bridge.cpp`
+- `src/tools/rtcm_decoder_ntrip.cpp`
+- `src/tools/rtcm_decoder_nats.cpp`
+- `scripts/bootstrap_deps.sh` (opcional, instala `nats.c` local en `third_party/`)
+- `docker-compose.yml` (cluster NATS local de 2 nodos)
 
 ## Requisitos
 - CMake >= 3.16
 - Compilador C++17
 - `make`
 - `git`
+- `libnats` (sistema o `third_party/nats/install`)
 
-Dependencias opcionales:
-- `libnats` para `rtcm_bridge` y `rtcm_decoder_nats`
-- `convbin`/`rnx2rtkp` (RTKLIB) para RINEX/PPP
-
-## Bootstrap de dependencias locales (opcional)
-Instala dependencias en `third_party/` para reproducibilidad:
-
+## Dependencia local opcional (nats.c)
 ```bash
 scripts/bootstrap_deps.sh
-```
-
-Solo RTKLIB:
-
-```bash
-scripts/bootstrap_deps.sh --rtklib-only
 ```
 
 ## Compilar
@@ -43,23 +30,14 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-Sin herramientas NATS:
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_NATS_TOOLS=OFF
-cmake --build build -j
-```
-
-## Configuracion de mountpoints
+## Configuración de mountpoints
 Formato de `mountpoints.conf`:
 
 ```text
 user:pass host:port/mountpoint
 ```
 
-Si no pasas `--mountpoint`, los tools que lo soportan procesan todos los mountpoints del fichero.
-
-## Ejecucion
+## Ejecución
 
 ### 1) Bridge NTRIP -> NATS
 ```bash
@@ -76,58 +54,10 @@ build/bin/rtcm_decoder_ntrip <host> <port> <mountpoint> <user> <pass>
 build/bin/rtcm_decoder_nats <mountpoint> [nats_servers_csv]
 ```
 
-### 3.1) Latencia desde caster NTRIP (MSM GPS)
+## NATS local (opcional)
 ```bash
-build/bin/rtcm_latency_ntrip \
-  --mountpoint=ABAN3M \
-  --mountpoints-file=mountpoints.conf \
-  --summary-sec=5 \
-  --gps-utc-leap-sec=18
+docker compose up -d
 ```
 
-### 3.2) Latencia desde NATS (MSM GPS)
-```bash
-build/bin/rtcm_latency_nats \
-  --mountpoint=ABAN3M \
-  --nats=nats://127.0.0.1:4222 \
-  --summary-sec=5 \
-  --gps-utc-leap-sec=18
-```
-
-### 4) Recorder RTCM -> RINEX en tiempo real
-```bash
-build/bin/rtcm_rinex_recorder \
-  --mountpoints-file=mountpoints.conf \
-  --out-dir=./data \
-  --rinex-version=3.04 \
-  --rinex-update-sec=10
-```
-
-Notas:
-- Si `convbin` esta disponible, genera `*.obs` y `*.nav`.
-- Si `convbin` no esta disponible, cae a `*.rtcm3`.
-- El proceso es continuo y termina con `Ctrl+C`.
-
-### 5) Posicion de estacion
-
-Modo RTCM (1005/1006):
-```bash
-build/bin/rtcm_station_position \
-  --mountpoints-file=mountpoints.conf \
-  --mode=rtcm \
-  --out-dir=./data
-```
-
-Modo PPP (solver externo):
-```bash
-build/bin/rtcm_station_position \
-  --mountpoints-file=mountpoints.conf \
-  --mode=ppp \
-  --out-dir=./data \
-  --solver-cmd='scripts/rtklib_ppp_solver.sh {rtcm} {solution} {workdir}'
-```
-
-## Tests
-```bash
-ctest --test-dir build --output-on-failure
-```
+- `nats://127.0.0.1:4222`
+- `nats://127.0.0.1:4223`
