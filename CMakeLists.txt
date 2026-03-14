@@ -51,14 +51,26 @@ else()
   endif()
 endif()
 
-add_executable(ntrip2nats src/tools/ntrip2nats.cpp)
+add_library(ntrip STATIC
+    src/ntrip.cpp
+)
+target_include_directories(ntrip PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+target_link_libraries(ntrip PUBLIC OpenSSL::Crypto)
+
+add_executable(ntrip2nats
+    src/ntrip2nats.cpp
+    src/logger.cpp
+)
+target_link_libraries(ntrip2nats PRIVATE ntrip)
 target_link_libraries(ntrip2nats PRIVATE Threads::Threads NATS::nats OpenSSL::Crypto)
 set_tool_output(ntrip2nats)
 
-add_executable(rtcm_decoder_ntrip src/tools/rtcm_decoder_ntrip.cpp)
+add_executable(rtcm_decoder_ntrip src/rtcm_decoder_ntrip.cpp)
 target_link_libraries(rtcm_decoder_ntrip PRIVATE Threads::Threads)
 set_tool_output(rtcm_decoder_ntrip)
 
-add_executable(rtcm_decoder_nats src/tools/rtcm_decoder_nats.cpp)
+add_executable(rtcm_decoder_nats src/rtcm_decoder_nats.cpp)
 target_link_libraries(rtcm_decoder_nats PRIVATE NATS::nats)
 set_tool_output(rtcm_decoder_nats)

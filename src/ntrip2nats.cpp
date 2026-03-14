@@ -8,7 +8,7 @@
 #include <boost/asio.hpp>
 #include <boost/algorithm/string.hpp>
 #include <nats/nats.h>
-#include <openssl/evp.h>
+#include <ntrip/ntrip.h>
 
 #include <algorithm>
 #include <atomic>
@@ -29,45 +29,12 @@
 #include <thread>
 #include <vector>
 
+#include <logger/logger.h>
+
 static constexpr const char* kSubjectPrefix = "NTRIP.";
 static constexpr const char* kUserAgent = "NTRIP-CppBridge";
-static constexpr const char* kConnectionHeader = "keep-alive";
 
-namespace configuration {
-
-enum class Section {
-    Options,
-    NtripSources,
-    NatsDestinations
-};
-
-struct Options {
-    int read_buffer_bytes = 4096;
-    int reconnect_initial_sec = 2;
-    int reconnect_max_sec = 32;
-    int throughput_log_every_bytes = 100 * 1024;
-};
-
-struct NtripSource {
-    std::string user;
-    std::string pass;
-    std::string host;
-    std::string name;
-    int port;
-};
-
-struct NatsDestination {
-    std::string server;
-};
-
-struct Configuration {
-    Options options;
-    std::vector<NtripSource> ntrip_sources;
-    std::vector<NatsDestination> nats_destinations;
-};
-
-}
-
+namespace {
 namespace parser {
 
 bool parse_positive_int(const std::string& value, int& out)
@@ -133,9 +100,9 @@ bool parse_options_body_line(const std::string& line,
         return true;
     }
 
-    if (key == "reconnect_ini_sec") {
-        if (!parse_positive_int(value, configuration.options.reconnect_initial_sec)) {
-            error = "Invalid option value 'reconnect_initial_sec'";
+    if (key == "reconnect_min_sec") {
+        if (!parse_positive_int(value, configuration.options.reconnect_min_sec)) {
+            error = "Invalid option value 'reconnect_min_sec'";
             return false;
         }
         return true;
@@ -275,8 +242,8 @@ bool parse_configuration(const std::string& path, configuration::Configuration& 
         }
     }
 
-    if (configuration.options.reconnect_initial_sec > configuration.options.reconnect_max_sec) {
-        error = "Value of reconnect_initial_sec cannot be greater than reconnect_max_sec";
+    if (configuration.options.reconnect_min_sec > configuration.options.reconnect_max_sec) {
+        error = "Value of reconnect_min_sec cannot be greater than reconnect_max_sec";
         return false;
     }
     if (configuration.nats_destinations.empty()) {
@@ -289,161 +256,10 @@ bool parse_configuration(const std::string& path, configuration::Configuration& 
     }
 
     return true;
-}
+}  // namespace parser
+}  // namespace
 
 }
-
-namespace encoder {
-
-std::string base64(const std::string& in)
-{
-    if (in.empty()) {
-        return {};
-    }
-
-    std::string out(4 * ((in.size() + 2) / 3), '\0');
-    auto* in_ptr = reinterpret_cast<const unsigned char*>(in.data());
-    auto* out_ptr = reinterpret_cast<unsigned char*>(out.data());
-    const int written = EVP_EncodeBlock(out_ptr, in_ptr, static_cast<int>(in.size()));
-    if (written <= 0) {
-        return {};
-    }
-
-    out.resize(written);
-    return out;
-}
-
-}
-
-class Logger {
-public:
-    enum class Level { Info, Warn, Error };
-
-    Logger() : worker_([this] { run(); }) {}
-
-    ~Logger() {
-        stop();
-        if (worker_.joinable()) {
-            worker_.join();
-        }
-    }
-
-    void info_sync(const std::string& context, const std::string& message)
-    {
-        emit(Level::Info, context, message);
-    }
-
-    void warn_sync(const std::string& context, const std::string& message)
-    {
-        emit(Level::Warn, context, message);
-    }
-
-    void error_sync(const std::string& context, const std::string& message)
-    {
-        emit(Level::Error, context, message);
-    }
-
-    void info(const std::string& context, const std::string& message)
-    {
-        enqueue(Level::Info, context, message);
-    }
-
-    void warn(const std::string& context, const std::string& message)
-    {
-        enqueue(Level::Warn, context, message);
-    }
-
-    void error(const std::string& context, const std::string& message)
-    {
-        enqueue(Level::Error, context, message);
-    }
-
-    void run()
-    {
-        std::unique_lock<std::mutex> lk(mtx_);
-        while (true) {
-            cv_.wait(lk, [&] { return stop_ || !q_.empty(); });
-            while (!q_.empty()) {
-                Entry e = std::move(q_.front());
-                q_.pop();
-                lk.unlock();
-                emit(e.level, e.context, e.message);
-                lk.lock();
-            }
-            if (stop_) break;
-        }
-    }
-
-    void stop()
-    {
-        stop_ = true;
-        cv_.notify_all();
-    }
-
-private:
-    struct Entry {
-        Level level = Level::Info;
-        std::string context;
-        std::string message;
-    };
-
-    static std::string now_timestamp_local()
-    {
-        const auto now = std::chrono::system_clock::now();
-        const std::time_t t = std::chrono::system_clock::to_time_t(now);
-
-        std::tm tm{};
-
-        localtime_r(&t, &tm);
-
-        std::ostringstream oss;
-        oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
-        return oss.str();
-    }
-
-    static const char* level_name(Level level)
-    {
-        switch (level) {
-            case Level::Info: return "INFO";
-            case Level::Warn: return "WARN";
-            case Level::Error: return "ERROR";
-        }
-        return "INFO";
-    }
-
-    static void emit(Level level,
-                     const std::string& context,
-                     const std::string& message,
-                     const std::string& ts = now_timestamp_local())
-    {
-        std::ostream& os = (level == Level::Error) ? std::cerr : std::cout;
-        os << "[" << ts << "]"
-           << "[" << level_name(level) << "]"
-           << "[" << context << "] "
-           << message << "\n";
-        os.flush();
-    }
-
-    void enqueue(Level level, const std::string& context, const std::string& message)
-    {
-        Entry e;
-        e.level = level;
-        e.context = context;
-        e.message = message;
-
-        {
-            std::lock_guard<std::mutex> lk(mtx_);
-            q_.push(std::move(e));
-        }
-        cv_.notify_one();
-    }
-
-    std::thread worker_;
-    std::queue<Entry> q_;
-    std::mutex mtx_;
-    std::condition_variable cv_;
-    std::atomic<bool> stop_{false};
-};
 
 namespace {
 
@@ -461,7 +277,7 @@ void nats_on_disconnected(natsConnection* nc, void* closure)
     auto* logger = static_cast<Logger*>(closure);
     if (logger == nullptr) return;
     const std::string url = nats_connected_url(nc);
-    logger->warn("nats", url.empty() ? "disconnected" : ("disconnected from " + url));
+    logger->warn("NATS", url.empty() ? "Disconnected" : ("Disconnected from " + url));
 }
 
 void nats_on_reconnected(natsConnection* nc, void* closure)
@@ -469,14 +285,14 @@ void nats_on_reconnected(natsConnection* nc, void* closure)
     auto* logger = static_cast<Logger*>(closure);
     if (logger == nullptr) return;
     const std::string url = nats_connected_url(nc);
-    logger->info("nats", url.empty() ? "reconnected" : ("reconnected to " + url));
+    logger->info("NATS", url.empty() ? "Reconnected" : ("Reconnected to " + url));
 }
 
 void nats_on_closed(natsConnection* /*nc*/, void* closure)
 {
     auto* logger = static_cast<Logger*>(closure);
     if (logger == nullptr) return;
-    logger->error("nats", "connection closed (no more reconnect attempts)");
+    logger->error("NATS", "Connection closed (no more reconnect attempts)");
 }
 
 void nats_on_async_error(natsConnection* /*nc*/,
@@ -486,136 +302,54 @@ void nats_on_async_error(natsConnection* /*nc*/,
 {
     auto* logger = static_cast<Logger*>(closure);
     if (logger == nullptr) return;
-    logger->warn("nats", "async error: " + std::string(natsStatus_GetText(err)));
+    logger->warn("NATS", "async error: " + std::string(natsStatus_GetText(err)));
 }
 
 }  // namespace
 
-class Ntrip2NatsSession : public std::enable_shared_from_this<Ntrip2NatsSession> {
+class StreamSession : public std::enable_shared_from_this<StreamSession> {
 public:
-    Ntrip2NatsSession(boost::asio::io_context& io,
-                      configuration::Options options,
-                      configuration::NtripSource ntrip_source,
-                      natsConnection* nats_connection,
-                      Logger& logger)
-        : resolver_(io),
-          socket_(io),
-          options_(std::move(options)),
-          nats_connection_(nats_connection),
-          ntrip_source_(std::move(ntrip_source)),
-          logger_(logger),
-          delay_(options_.reconnect_initial_sec)
+    StreamSession(ntripConnection* ntrip_connection,
+                  natsConnection* nats_connection,
+                  Logger& logger)
+        : nats_connection_(nats_connection),
+          ntrip_connection_(ntrip_connection),
+          logger_(logger)
     {
-        buffer_.resize(options_.read_buffer_bytes);
+        subject = std::string(kSubjectPrefix) + std::string(ntripSource_GetText(ntrip_connection_));
     }
 
-    // Starts the options
     void start()
     {
-        logger_.info(ntrip_source_.name, "starting options");
-        connect();
+        logger_.info(subject, "Starting session");
+        ntripOptions_SetHandler(ntrip_connection_, [this](const char* data, std::size_t n) { handle_stream(data, n); });
+        const ntripStatus consume_status = ntripConnection_Consume(ntrip_connection_);
+        if (consume_status != NTRIP_OK) {
+            throw std::runtime_error("Consuming from NTRIP failed: " + std::string(ntripStatus_GetText(consume_status)));
+        }
     }
 
 private:
-    boost::asio::ip::tcp::resolver resolver_;
-    boost::asio::ip::tcp::socket socket_;
-    configuration::Options options_;
     natsConnection* nats_connection_;
-    configuration::NtripSource ntrip_source_;
-    std::vector<char> buffer_;
-    std::string request_;
+    ntripConnection* ntrip_connection_;
     Logger& logger_;
+
+    std::string subject;
     uint64_t total_ = 0;
     uint64_t last_log_ = 0;
-    int delay_ = 1;
-    std::unique_ptr<boost::asio::steady_timer> timer_;
 
-    void connect()
+    void handle_stream(const char* data, std::size_t n)
     {
-        auto self = shared_from_this();
-        resolver_.async_resolve(ntrip_source_.host, std::to_string(ntrip_source_.port), [this, self](auto ec, auto eps) {
-            if (!ec) {
-                boost::asio::async_connect(socket_, eps, [this, self](auto ec2, auto) {
-                    if (!ec2) {
-                        send_request();
-                    } else {
-                        reconnect();
-                    }
-                });
-            } else {
-                reconnect();
-            }
-        });
-    }
-
-    void send_request()
-    {
-        std::string credentials = ntrip_source_.user + ":" + ntrip_source_.pass;
-        std::string encoded_credentials = encoder::base64(credentials);
-        if (!credentials.empty() && encoded_credentials.empty()) {
-            logger_.error(ntrip_source_.name, "Credentials encoding failed");
-            reconnect();
-            return;
+        total_ += n;
+        if ((total_ - last_log_) >= ntripOptions_GetThroughputLogEveryBytes(ntrip_connection_)) {
+            logger_.info(subject, "Streamed " + std::to_string(total_ / 1024) + "KB");
+            last_log_ = total_;
         }
 
-        request_ =
-            "GET /" + ntrip_source_.name + " HTTP/1.1\r\n"
-            "User-Agent: " + std::string(kUserAgent) + "\r\n"
-            "Authorization: Basic " + encoded_credentials + "\r\n"
-            "Connection: " + std::string(kConnectionHeader) + "\r\n\r\n";
-
-        auto self = shared_from_this();
-        boost::asio::async_write(socket_, boost::asio::buffer(request_), [this, self](auto ec, auto) {
-            if (!ec) {
-                read();
-            } else {
-                reconnect();
-            }
-        });
-    }
-
-    void read()
-    {
-        auto self = shared_from_this();
-        socket_.async_read_some(boost::asio::buffer(buffer_), [this, self](auto ec, std::size_t n) {
-            if (!ec) {
-                // IMPORTANT: this implementation does not parse/strip the initial HTTP response headers.
-                // If the caster sends headers (typical), the first publish may include them unless the
-                // server starts streaming RTCM immediately after the handshake. If you see "HTTP/1.1"
-                // bytes on the NATS side, add a one-time header read until "\\r\\n\\r\\n".
-                total_ += n;
-
-                if ((total_ - last_log_) >= options_.throughput_log_every_bytes) {
-                    logger_.info(ntrip_source_.name, "streamed=" + std::to_string(total_ / 1024U) + "KB");
-                    last_log_ = total_;
-                }
-
-                // Subject naming is intentionally deterministic for consumers:
-                // NTRIP.<mountpoint>. If mountpoint names can contain '.' or other separators in your
-                // environment, consider normalizing/sanitizing them to avoid subscription surprises.
-                const std::string subject = std::string(kSubjectPrefix) + ntrip_source_.name;
-                const natsStatus s =
-                    natsConnection_Publish(nats_connection_, subject.c_str(), buffer_.data(), static_cast<int>(n));
-                if (s != NATS_OK) {
-                    logger_.warn_sync(ntrip_source_.name, "nats publish failed: " + std::string(natsStatus_GetText(s)));
-                }
-
-                read();
-            } else {
-                reconnect();
-            }
-        });
-    }
-
-    void reconnect()
-    {
-        socket_.close();
-        delay_ = std::min(delay_ * 2, options_.reconnect_max_sec);
-        logger_.warn(ntrip_source_.name, "reconnect in " + std::to_string(delay_) + "s");
-
-        timer_ = std::make_unique<boost::asio::steady_timer>(socket_.get_executor(), std::chrono::seconds(delay_));
-        auto self = shared_from_this();
-        timer_->async_wait([this, self](auto) { connect(); });
+        const natsStatus publish_status = natsConnection_Publish(nats_connection_, subject.c_str(), data, static_cast<int>(n));
+        if (publish_status != NATS_OK) {
+            logger_.warn_sync(subject, "Publishing to NATS failed: " + std::string(natsStatus_GetText(publish_status)));
+        }
     }
 };
 
@@ -638,7 +372,7 @@ int main(int argc, char* argv[])
                 << "Required config format:\n"
                 << "  [options]\n"
                 << "    read_buffer_bytes=<positive integer>\n"
-                << "    reconnect_ini_sec=<positive integer>\n"
+                << "    reconnect_min_sec=<positive integer>\n"
                 << "    reconnect_max_sec=<positive integer>\n"
                 << "    throughput_log_kb=<positive integer>\n"
                 << "  [nats_destinations]\n"
@@ -668,7 +402,6 @@ int main(int argc, char* argv[])
     }
 
     try {
-        // Creamos instancia de configuración de NATS
         natsOptions* raw_nats_options = nullptr;
         const natsStatus create_status = natsOptions_Create(&raw_nats_options);
         if (create_status != NATS_OK) {
@@ -695,8 +428,34 @@ int main(int argc, char* argv[])
         std::unique_ptr<natsConnection, decltype(&natsConnection_Destroy)> nat_connection(raw_nat_connection, natsConnection_Destroy);
 
         boost::asio::io_context io;
+        std::vector<std::unique_ptr<ntripConnection, decltype(&ntripConnection_Destroy)>> ntrip_servers;
+        ntrip_servers.reserve(configuration.ntrip_sources.size());
+        std::vector<std::shared_ptr<StreamSession>> stream_sessions;
+        stream_sessions.reserve(configuration.ntrip_sources.size());
         for (const auto& ntrip_source : configuration.ntrip_sources) {
-            std::make_shared<Ntrip2NatsSession>(io, configuration.options, ntrip_source, nat_connection.get(), logger)->start();
+            ntripOptions* raw_ntrip_options = nullptr;
+            const ntripStatus options_status = ntripOptions_Create(&raw_ntrip_options);
+            if (options_status != NTRIP_OK) {
+                throw std::runtime_error("NTRIP options create failed: " + std::string(ntripStatus_GetText(options_status)));
+            }
+            std::unique_ptr<ntripOptions, decltype(&ntripOptions_Destroy)> ntrip_options(raw_ntrip_options, ntripOptions_Destroy);
+
+            ntripOptions_SetOptions(ntrip_options.get(), &configuration.options);
+            ntripOptions_SetIo(ntrip_options.get(), &io);
+            ntripOptions_SetSource(ntrip_options.get(), &ntrip_source);
+
+            ntripConnection* raw_ntrip_connection = nullptr;
+            const ntripStatus connect_status = ntripConnection_Create(&raw_ntrip_connection, ntrip_options.get());
+            if (connect_status != NTRIP_OK) {
+                throw std::runtime_error("NTRIP connection create failed: " + std::string(ntripStatus_GetText(connect_status)));
+            }
+            std::unique_ptr<ntripConnection, decltype(&ntripConnection_Destroy)> ntrip_connection(raw_ntrip_connection, ntripConnection_Destroy);
+            
+            auto session = std::make_shared<StreamSession>(ntrip_connection.get(), nat_connection.get(), logger);
+            session->start();
+            
+            ntrip_servers.push_back(std::move(ntrip_connection));
+            stream_sessions.push_back(std::move(session));
         }
         io.run();
 

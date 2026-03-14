@@ -879,7 +879,7 @@ int main(int argc, char* argv[])
     for (const auto& sv : server_list) server_ptrs.push_back(sv.c_str());
     s = natsOptions_SetServers(opts, server_ptrs.data(), static_cast<int>(server_ptrs.size()));
     if (s != NATS_OK) {
-        std::cerr << "natsOptions_SetServers failed: " << natsStatus_GetText(s) << "\n";
+        std::cerr << "natsOptions_SetSources failed: " << natsStatus_GetText(s) << "\n";
         natsOptions_Destroy(opts);
         return 1;
     }

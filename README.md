@@ -43,7 +43,7 @@ cmake --build build -j
 connection_header=keep-alive
 read_buffer_bytes=4096
 throughput_log_kb=100
-reconnect_initial_sec=1
+reconnect_min_sec=1
 reconnect_max_sec=30
 
 [nats_destinations]
