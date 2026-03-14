@@ -12,6 +12,7 @@ function(set_tool_output target_name)
 endfunction()
 
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 set(_nats_local_lib "")
 if(EXISTS "${NATS_ROOT}/lib/libnats.a")
@@ -50,14 +51,14 @@ else()
   endif()
 endif()
 
-add_executable(rtcm_bridge src/tools/rtcm_bridge.cpp)
-target_link_libraries(rtcm_bridge PRIVATE Threads::Threads NATS::nats)
-set_tool_output(rtcm_bridge)
+add_executable(ntrip2nats src/tools/ntrip2nats.cpp)
+target_link_libraries(ntrip2nats PRIVATE Threads::Threads NATS::nats OpenSSL::Crypto)
+set_tool_output(ntrip2nats)
 
 add_executable(rtcm_decoder_ntrip src/tools/rtcm_decoder_ntrip.cpp)
 target_link_libraries(rtcm_decoder_ntrip PRIVATE Threads::Threads)
 set_tool_output(rtcm_decoder_ntrip)
 
 add_executable(rtcm_decoder_nats src/tools/rtcm_decoder_nats.cpp)
-target_link_libraries(rtcm_decoder_nats PRIVATE Threads::Threads NATS::nats)
+target_link_libraries(rtcm_decoder_nats PRIVATE NATS::nats)
 set_tool_output(rtcm_decoder_nats)

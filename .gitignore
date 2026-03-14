@@ -3,7 +3,7 @@
 /third_party/
 /logs/
 /default.profraw
-/rtcm_bridge
+/ntrip2nats
 /rtcm_decoder_nats
 /rtcm_decoder_ntrip
 *.trace
