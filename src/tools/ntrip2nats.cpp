@@ -293,6 +293,28 @@ bool parse_configuration(const std::string& path, configuration::Configuration& 
 
 }
 
+namespace encoder {
+
+std::string base64(const std::string& in)
+{
+    if (in.empty()) {
+        return {};
+    }
+
+    std::string out(4 * ((in.size() + 2) / 3), '\0');
+    auto* in_ptr = reinterpret_cast<const unsigned char*>(in.data());
+    auto* out_ptr = reinterpret_cast<unsigned char*>(out.data());
+    const int written = EVP_EncodeBlock(out_ptr, in_ptr, static_cast<int>(in.size()));
+    if (written <= 0) {
+        return {};
+    }
+
+    out.resize(written);
+    return out;
+}
+
+}
+
 class Logger {
 public:
     enum class Level { Info, Warn, Error };
@@ -469,25 +491,6 @@ void nats_on_async_error(natsConnection* /*nc*/,
 
 }  // namespace
 
-std::string base64_encode(const std::string& in)
-{
-    if (in.empty()) return {};
-    if (in.size() > static_cast<size_t>(std::numeric_limits<int>::max())) return {};
-
-    const int in_len = static_cast<int>(in.size());
-    const int out_len = 4 * ((in_len + 2) / 3);
-    std::string out(static_cast<size_t>(out_len), '\0');
-
-    const int written = EVP_EncodeBlock(
-        reinterpret_cast<unsigned char*>(&out[0]),
-        reinterpret_cast<const unsigned char*>(in.data()),
-        in_len);
-
-    if (written <= 0) return {};
-    out.resize(static_cast<size_t>(written));
-    return out;
-}
-
 class Ntrip2NatsSession : public std::enable_shared_from_this<Ntrip2NatsSession> {
 public:
     Ntrip2NatsSession(boost::asio::io_context& io,
@@ -530,7 +533,6 @@ private:
     void connect()
     {
         auto self = shared_from_this();
-
         resolver_.async_resolve(ntrip_source_.host, std::to_string(ntrip_source_.port), [this, self](auto ec, auto eps) {
             if (!ec) {
                 boost::asio::async_connect(socket_, eps, [this, self](auto ec2, auto) {
@@ -548,10 +550,10 @@ private:
 
     void send_request()
     {
-        std::string auth = ntrip_source_.user + ":" + ntrip_source_.pass;
-        std::string encoded = base64_encode(auth);
-        if (encoded.empty() && !auth.empty()) {
-            logger_.error(ntrip_source_.name, "base64 encoding failed");
+        std::string credentials = ntrip_source_.user + ":" + ntrip_source_.pass;
+        std::string encoded_credentials = encoder::base64(credentials);
+        if (!credentials.empty() && encoded_credentials.empty()) {
+            logger_.error(ntrip_source_.name, "Credentials encoding failed");
             reconnect();
             return;
         }
@@ -559,7 +561,7 @@ private:
         request_ =
             "GET /" + ntrip_source_.name + " HTTP/1.1\r\n"
             "User-Agent: " + std::string(kUserAgent) + "\r\n"
-            "Authorization: Basic " + encoded + "\r\n"
+            "Authorization: Basic " + encoded_credentials + "\r\n"
             "Connection: " + std::string(kConnectionHeader) + "\r\n\r\n";
 
         auto self = shared_from_this();
@@ -666,18 +668,18 @@ int main(int argc, char* argv[])
     }
 
     try {
+        // Creamos instancia de configuración de NATS
         natsOptions* raw_nats_options = nullptr;
         const natsStatus create_status = natsOptions_Create(&raw_nats_options);
         if (create_status != NATS_OK) {
             throw std::runtime_error("NATS options create failed: " + std::string(natsStatus_GetText(create_status)));
         }
-
         std::unique_ptr<natsOptions, decltype(&natsOptions_Destroy)> nat_options(raw_nats_options, natsOptions_Destroy);
+        
         natsOptions_SetDisconnectedCB(nat_options.get(), &nats_on_disconnected, &logger);
         natsOptions_SetReconnectedCB(nat_options.get(), &nats_on_reconnected, &logger);
         natsOptions_SetClosedCB(nat_options.get(), &nats_on_closed, &logger);
         natsOptions_SetErrorHandler(nat_options.get(), &nats_on_async_error, &logger);
-
         std::vector<const char*> nats_servers;
         nats_servers.reserve(configuration.nats_destinations.size());
         for (const auto& nats_destination : configuration.nats_destinations) {
@@ -690,15 +692,14 @@ int main(int argc, char* argv[])
         if (connect_status != NATS_OK) {
             throw std::runtime_error("NATS connection failed: " + std::string(natsStatus_GetText(connect_status)));
         }
-
         std::unique_ptr<natsConnection, decltype(&natsConnection_Destroy)> nat_connection(raw_nat_connection, natsConnection_Destroy);
 
         boost::asio::io_context io;
         for (const auto& ntrip_source : configuration.ntrip_sources) {
             std::make_shared<Ntrip2NatsSession>(io, configuration.options, ntrip_source, nat_connection.get(), logger)->start();
         }
-
         io.run();
+
         logger.warn("main", "Sessions stopped");
     } catch (const std::exception& ex) {
         logger.error("main", ex.what());
