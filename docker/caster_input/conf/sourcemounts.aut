@@ -1,0 +1,5 @@
+#
+# Source mount authentication file.
+# Test setup: GAP users can publish to any mountpoint.
+#
+all:GAP

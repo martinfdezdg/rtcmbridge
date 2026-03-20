@@ -4,12 +4,23 @@
 
 #include <algorithm>
 #include <chrono>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 
 namespace {
 
 constexpr const char* kUserAgent = "NTRIP-CppBridge";
 constexpr const char* kConnectionHeader = "keep-alive";
+
+std::string encode_chunk(const char* data, std::size_t n)
+{
+    std::ostringstream out;
+    out << std::hex << n << "\r\n";
+    out.write(data, static_cast<std::streamsize>(n));
+    out << "\r\n";
+    return out.str();
+}
 
 std::string base64(const std::string& in)
 {
@@ -148,6 +159,9 @@ void ntripConnection::start()
 
 void ntripConnection::connect()
 {
+    response_headers_complete_ = false;
+    response_buffer_.clear();
+
     resolver_.async_resolve(options_.source().host, std::to_string(options_.source().port), [this](auto ec, auto eps) {
         if (ec == boost::asio::error::operation_aborted) {
             return;
@@ -206,9 +220,7 @@ void ntripConnection::read()
             return;
         }
         if (!ec) {
-            if (consumption_handler_) {
-                consumption_handler_(buffer_.data(), n);
-            }
+            handle_stream_bytes(buffer_.data(), n);
             read();
         } else {
             reconnect();
@@ -216,8 +228,52 @@ void ntripConnection::read()
     });
 }
 
+void ntripConnection::handle_stream_bytes(const char* data, std::size_t n)
+{
+    if (data == nullptr || n == 0) {
+        return;
+    }
+
+    if (response_headers_complete_) {
+        if (consumption_handler_) {
+            consumption_handler_(data, n);
+        }
+        return;
+    }
+
+    response_buffer_.append(data, n);
+
+    const std::size_t headers_end = response_buffer_.find("\r\n\r\n");
+    if (headers_end == std::string::npos) {
+        return;
+    }
+
+    const std::string headers = response_buffer_.substr(0, headers_end + 4);
+    if (!response_ok(headers)) {
+        reconnect();
+        return;
+    }
+
+    response_headers_complete_ = true;
+    const std::size_t payload_offset = headers_end + 4;
+    if (payload_offset < response_buffer_.size() && consumption_handler_) {
+        consumption_handler_(response_buffer_.data() + payload_offset, response_buffer_.size() - payload_offset);
+    }
+    response_buffer_.clear();
+}
+
+bool ntripConnection::response_ok(const std::string& headers) const
+{
+    const std::size_t line_end = headers.find("\r\n");
+    const std::string status_line = headers.substr(0, line_end);
+    return status_line.find(" 200 ") != std::string::npos || status_line.rfind("ICY 200", 0) == 0;
+}
+
 void ntripConnection::reconnect()
 {
+    response_headers_complete_ = false;
+    response_buffer_.clear();
+
     boost::system::error_code ignored_ec;
     resolver_.cancel();
     if (timer_) {
@@ -236,6 +292,48 @@ void ntripConnection::reconnect()
     });
 }
 
+void ntripConnection::connect_source()
+{
+    boost::system::error_code ignored_ec;
+    resolver_.cancel();
+    socket_.cancel(ignored_ec);
+    socket_.close(ignored_ec);
+
+    const auto endpoints = resolver_.resolve(options_.source().host, std::to_string(options_.source().port));
+    boost::asio::connect(socket_, endpoints);
+}
+
+void ntripConnection::send_source_request()
+{
+    const std::string credentials = options_.source().user + ":" + options_.source().pass;
+    const std::string encoded_credentials = base64(credentials);
+    if (!credentials.empty() && encoded_credentials.empty()) {
+        throw std::runtime_error("Failed to encode NTRIP credentials");
+    }
+
+    request_ =
+        "POST /" + options_.source().name + " HTTP/1.1\r\n"
+        "Host: " + options_.source().host + ":" + std::to_string(options_.source().port) + "\r\n"
+        "User-Agent: " + std::string(kUserAgent) + "\r\n"
+        "Ntrip-Version: Ntrip/2.0\r\n"
+        "Authorization: Basic " + encoded_credentials + "\r\n"
+        "Transfer-Encoding: chunked\r\n"
+        "Connection: " + std::string(kConnectionHeader) + "\r\n\r\n";
+
+    boost::asio::write(socket_, boost::asio::buffer(request_));
+}
+
+ntripStatus ntripConnection::write_source(const char* data, std::size_t n)
+{
+    if (data == nullptr || n == 0) {
+        return ntripStatus::NTRIP_ERR;
+    }
+
+    const std::string chunk = encode_chunk(data, n);
+    boost::asio::write(socket_, boost::asio::buffer(chunk));
+    return ntripStatus::NTRIP_OK;
+}
+
 void ntripConnection::set_consumption_handler(DataHandler consumption_handler)
 {
     consumption_handler_ = std::move(consumption_handler);
@@ -248,6 +346,34 @@ ntripStatus ntripConnection_Consume(ntripConnection* connection)
     }
     connection->start();
     return ntripStatus::NTRIP_OK;
+}
+
+ntripStatus ntripConnection_Source(ntripConnection* connection)
+{
+    if (connection == nullptr) {
+        return ntripStatus::NTRIP_ERR;
+    }
+
+    try {
+        connection->connect_source();
+        connection->send_source_request();
+        return ntripStatus::NTRIP_OK;
+    } catch (...) {
+        return ntripStatus::NTRIP_ERR;
+    }
+}
+
+ntripStatus ntripConnection_Write(ntripConnection* connection, const char* data, std::size_t n)
+{
+    if (connection == nullptr) {
+        return ntripStatus::NTRIP_ERR;
+    }
+
+    try {
+        return connection->write_source(data, n);
+    } catch (...) {
+        return ntripStatus::NTRIP_ERR;
+    }
 }
 
 ntripStatus ntripConnection_Create(ntripConnection** out, ntripOptions* options)

@@ -67,6 +67,14 @@ target_link_libraries(ntrip2nats PRIVATE ntrip)
 target_link_libraries(ntrip2nats PRIVATE Threads::Threads NATS::nats OpenSSL::Crypto)
 set_tool_output(ntrip2nats)
 
+add_executable(nats2ntrip
+    src/nats2ntrip.cpp
+    src/logger.cpp
+)
+target_link_libraries(nats2ntrip PRIVATE ntrip)
+target_link_libraries(nats2ntrip PRIVATE Threads::Threads NATS::nats OpenSSL::Crypto)
+set_tool_output(nats2ntrip)
+
 add_executable(rtcm_decoder_ntrip src/rtcm_decoder_ntrip.cpp)
 target_link_libraries(rtcm_decoder_ntrip PRIVATE Threads::Threads)
 set_tool_output(rtcm_decoder_ntrip)

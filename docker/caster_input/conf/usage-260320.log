@@ -1,0 +1,9 @@
+[20/Mar/2026:18:57:59] [1:Calendar Thread] Bandwidth:0.000000KB/s Sources:0 Clients:0 Admins:0
+[20/Mar/2026:18:59:59] [1:Calendar Thread] Bandwidth:15.500000KB/s Sources:11 Clients:0 Admins:0
+[20/Mar/2026:19:00:00] [1:Calendar Thread] Hourly statistics: [Client connects: 0] [Source connects: 11] [Bytes read: 1960472] [Bytes written: 0]
+[20/Mar/2026:19:00:00] [1:Calendar Thread] Hourly averages: [Client transfer: 0 bytes] [Source transfer: 178224] [Client connect time: 0 minutes] [Source connect time: 1 minutes]
+[20/Mar/2026:19:01:59] [1:Calendar Thread] Bandwidth:15.300000KB/s Sources:11 Clients:0 Admins:0
+[20/Mar/2026:19:03:59] [1:Calendar Thread] Bandwidth:15.383333KB/s Sources:11 Clients:0 Admins:0
+[20/Mar/2026:19:05:59] [1:Calendar Thread] Bandwidth:15.283333KB/s Sources:11 Clients:0 Admins:0
+[20/Mar/2026:19:07:59] [1:Calendar Thread] Bandwidth:15.066667KB/s Sources:11 Clients:0 Admins:0
+[20/Mar/2026:19:09:59] [1:Calendar Thread] Bandwidth:14.966667KB/s Sources:11 Clients:0 Admins:0

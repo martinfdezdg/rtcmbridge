@@ -1,0 +1,21 @@
+[20/Mar/2026:18:57:51] [0:Main Thread] Trying to fork
+[20/Mar/2026:18:57:51] [0:Main Thread] Detached (pid: 16)
+[20/Mar/2026:18:57:51] [0:Main Thread] Starting main connection handler...
+[20/Mar/2026:18:57:59] [0:Main Thread] WARNING: Resolving the server name [bmwglobal] does not work!
+[20/Mar/2026:18:57:59] [0:Main Thread] Listening on port 2101...
+[20/Mar/2026:18:57:59] [0:Main Thread] Using 'bmwglobal' as servername...
+[20/Mar/2026:18:57:59] [0:Main Thread] Server limits: 5000 clients, 5000 clients per source, 1000 sources, 1 admins
+[20/Mar/2026:18:57:59] [0:Main Thread] WWW Admin interface accessible at http://bmwglobal:2101/admin
+[20/Mar/2026:18:57:59] [0:Main Thread] Starting Calender Thread...
+[20/Mar/2026:18:57:59] [0:Main Thread] Starting relay connector thread...
+[20/Mar/2026:18:57:59] [11:Connection Handler] Accepted encoder on mountpoint /ACIN3M from 10.1.6.1. 1 sources connected
+[20/Mar/2026:18:57:59] [9:Connection Handler] Accepted encoder on mountpoint /ACNS3M from 10.1.6.1. 2 sources connected
+[20/Mar/2026:18:57:59] [10:Connection Handler] Accepted encoder on mountpoint /ABAN3M from 10.1.6.1. 3 sources connected
+[20/Mar/2026:18:57:59] [6:Connection Handler] Accepted encoder on mountpoint /ALCO3M from 10.1.6.1. 4 sources connected
+[20/Mar/2026:18:57:59] [13:Connection Handler] Accepted encoder on mountpoint /ALAC3M from 10.1.6.1. 5 sources connected
+[20/Mar/2026:18:57:59] [7:Connection Handler] Accepted encoder on mountpoint /AIO23M from 10.1.6.1. 6 sources connected
+[20/Mar/2026:18:57:59] [8:Connection Handler] Accepted encoder on mountpoint /AGRD3M from 10.1.6.1. 7 sources connected
+[20/Mar/2026:18:57:59] [12:Connection Handler] Accepted encoder on mountpoint /AJAL3M from 10.1.6.1. 8 sources connected
+[20/Mar/2026:18:57:59] [16:Connection Handler] Accepted encoder on mountpoint /ALBO3M from 10.1.6.1. 9 sources connected
+[20/Mar/2026:18:57:59] [15:Connection Handler] Accepted encoder on mountpoint /ALC13M from 10.1.6.1. 10 sources connected
+[20/Mar/2026:18:57:59] [14:Connection Handler] Accepted encoder on mountpoint /ALBA3M from 10.1.6.1. 11 sources connected

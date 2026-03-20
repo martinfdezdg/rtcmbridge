@@ -87,7 +87,12 @@ private:
     void connect();
     void send_request();
     void read();
+    void handle_stream_bytes(const char* data, std::size_t n);
+    bool response_ok(const std::string& headers) const;
     void reconnect();
+    void connect_source();
+    void send_source_request();
+    ntripStatus write_source(const char* data, std::size_t n);
     void set_consumption_handler(DataHandler consumption_handler);
 
     boost::asio::ip::tcp::resolver resolver_;
@@ -96,11 +101,15 @@ private:
     DataHandler consumption_handler_;
     std::vector<char> buffer_;
     std::string request_;
+    std::string response_buffer_;
+    bool response_headers_complete_ = false;
     int delay_ = 1;
     std::unique_ptr<boost::asio::steady_timer> timer_;
 
     friend ntripStatus ntripOptions_SetHandler(ntripConnection* connection, ntripDataHandler handler);
     friend ntripStatus ntripConnection_Consume(ntripConnection* connection);
+    friend ntripStatus ntripConnection_Source(ntripConnection* connection);
+    friend ntripStatus ntripConnection_Write(ntripConnection* connection, const char* data, std::size_t n);
 };
 
 ntripStatus ntripOptions_Create(ntripOptions** out);
@@ -115,6 +124,8 @@ ntripStatus ntripConnection_Create(ntripConnection** out, ntripOptions* options)
 void ntripConnection_Destroy(ntripConnection* connection);
 
 ntripStatus ntripConnection_Consume(ntripConnection* connection);
+ntripStatus ntripConnection_Source(ntripConnection* connection);
+ntripStatus ntripConnection_Write(ntripConnection* connection, const char* data, std::size_t n);
 
 const char* ntripStatus_GetText(ntripStatus status);
 const char* ntripSource_GetText(const ntripConnection* connection);
