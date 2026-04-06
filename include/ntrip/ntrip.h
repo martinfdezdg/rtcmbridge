@@ -92,6 +92,7 @@ private:
     void reconnect();
     void connect_source();
     void send_source_request();
+    void read_source_response();
     ntripStatus write_source(const char* data, std::size_t n);
     void set_consumption_handler(DataHandler consumption_handler);
 

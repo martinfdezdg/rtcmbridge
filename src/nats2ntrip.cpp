@@ -20,6 +20,7 @@
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <queue>
 #include <stdexcept>
 #include <string>
@@ -357,6 +358,7 @@ public:
           subject_(std::string(kSubjectPrefix) + std::string(ntripSource_GetText(ntrip_connection))),
           reconnect_delay_(ntrip_connection->options().reconnect_min_sec())
     {
+        reconnect_jitter_ms_ = static_cast<int>(std::hash<std::string>{}(subject_) % 1000U);
     }
 
     ~StreamSession()
@@ -420,7 +422,9 @@ private:
         {
             std::lock_guard<std::mutex> lk(mtx_);
             queue_.push(std::move(payload));
+            queued_bytes_ += size;
             total_ += size;
+            trim_queue_locked();
             if ((total_ - last_log_) >= static_cast<uint64_t>(ntripOptions_GetThroughputLogEveryBytes(ntrip_connection_))) {
                 logger_.info(subject_, "Streamed " + std::to_string(total_ / 1024) + "KB");
                 last_log_ = total_;
@@ -440,9 +444,14 @@ private:
                     break;
                 }
                 logger_.warn(subject_, ex.what());
-                logger_.warn(subject_, "Reconnecting in " + std::to_string(reconnect_delay_) + "s");
+                {
+                    std::lock_guard<std::mutex> lk(mtx_);
+                    clear_queue_locked();
+                }
+                const int reconnect_wait_ms = reconnect_delay_ * 1000 + reconnect_jitter_ms_;
+                logger_.warn(subject_, "Reconnecting in " + std::to_string(reconnect_wait_ms) + "ms");
                 std::unique_lock<std::mutex> lk(mtx_);
-                cv_.wait_for(lk, std::chrono::seconds(reconnect_delay_), [this] { return stop_ || parser::g_stop.load(); });
+                cv_.wait_for(lk, std::chrono::milliseconds(reconnect_wait_ms), [this] { return stop_ || parser::g_stop.load(); });
                 reconnect_delay_ = std::min(reconnect_delay_ * 2, ntrip_connection_->options().reconnect_max_sec());
             }
         }
@@ -466,6 +475,7 @@ private:
                 }
                 payload = std::move(queue_.front());
                 queue_.pop();
+                queued_bytes_ -= payload.size();
             }
 
             const ntripStatus write_status = ntripConnection_Write(ntrip_connection_, payload.data(), payload.size());
@@ -475,11 +485,52 @@ private:
         }
     }
 
+    std::size_t max_queue_bytes() const
+    {
+        const std::size_t throughput_hint = static_cast<std::size_t>(
+            std::max(1, ntripOptions_GetThroughputLogEveryBytes(ntrip_connection_)));
+        return std::max<std::size_t>(256U * 1024U, throughput_hint * 4U);
+    }
+
+    void trim_queue_locked()
+    {
+        bool dropped_any = false;
+        while (queued_bytes_ > max_queue_bytes() && !queue_.empty()) {
+            dropped_any = true;
+            dropped_bytes_ += queue_.front().size();
+            queued_bytes_ -= queue_.front().size();
+            queue_.pop();
+        }
+
+        if (dropped_any) {
+            logger_.warn(subject_, "Dropped queued backlog to keep real-time flow (dropped " +
+                                      std::to_string(dropped_bytes_ / 1024) + "KB total)");
+        }
+    }
+
+    void clear_queue_locked()
+    {
+        if (queue_.empty()) {
+            return;
+        }
+
+        std::size_t cleared_bytes = 0;
+        while (!queue_.empty()) {
+            cleared_bytes += queue_.front().size();
+            queue_.pop();
+        }
+        queued_bytes_ = 0;
+        dropped_bytes_ += cleared_bytes;
+        logger_.warn(subject_, "Discarded " + std::to_string(cleared_bytes / 1024) +
+                                  "KB of stale queued data before reconnect");
+    }
+
     ntripConnection* ntrip_connection_ = nullptr;
     natsConnection* nats_connection_ = nullptr;
     Logger& logger_;
     std::string subject_;
     int reconnect_delay_ = 1;
+    int reconnect_jitter_ms_ = 0;
 
     std::mutex mtx_;
     std::condition_variable cv_;
@@ -489,6 +540,8 @@ private:
     bool stop_ = false;
     uint64_t total_ = 0;
     uint64_t last_log_ = 0;
+    std::size_t queued_bytes_ = 0;
+    std::size_t dropped_bytes_ = 0;
 };
 
 int main(int argc, char* argv[])

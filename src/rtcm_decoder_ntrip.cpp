@@ -877,7 +877,7 @@ private:
         request_ =
             "GET /" + mountpoint_ + " HTTP/1.1\r\n"
             "Host: " + host_ + ":" + std::to_string(port_) + "\r\n"
-            "User-Agent: RTCM-Direct-Decoder/1.0\r\n"
+            "User-Agent: NTRIP-Direct-Decoder/1.0\r\n"
             "Ntrip-Version: Ntrip/2.0\r\n"
             "Authorization: Basic " + encoded + "\r\n"
             "Connection: keep-alive\r\n\r\n";

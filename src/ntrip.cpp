@@ -323,6 +323,27 @@ void ntripConnection::send_source_request()
     boost::asio::write(socket_, boost::asio::buffer(request_));
 }
 
+void ntripConnection::read_source_response()
+{
+    response_headers_complete_ = false;
+    response_buffer_.clear();
+
+    boost::asio::read_until(socket_, boost::asio::dynamic_buffer(response_buffer_), "\r\n\r\n");
+
+    const std::size_t headers_end = response_buffer_.find("\r\n\r\n");
+    if (headers_end == std::string::npos) {
+        throw std::runtime_error("Invalid NTRIP source response");
+    }
+
+    const std::string headers = response_buffer_.substr(0, headers_end + 4);
+    if (!response_ok(headers)) {
+        throw std::runtime_error("NTRIP source rejected upload");
+    }
+
+    response_headers_complete_ = true;
+    response_buffer_.clear();
+}
+
 ntripStatus ntripConnection::write_source(const char* data, std::size_t n)
 {
     if (data == nullptr || n == 0) {
@@ -357,6 +378,7 @@ ntripStatus ntripConnection_Source(ntripConnection* connection)
     try {
         connection->connect_source();
         connection->send_source_request();
+        connection->read_source_response();
         return ntripStatus::NTRIP_OK;
     } catch (...) {
         return ntripStatus::NTRIP_ERR;

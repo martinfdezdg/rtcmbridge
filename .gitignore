@@ -1,5 +1,6 @@
 /build/
 /data/
+/tmp/
 /third_party/
 /logs/
 /default.profraw
